@@ -13,20 +13,23 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <pthread.h>
+#include <unistd.h>
 
 #define PROTOCOL_NAME "UDP"
 
 struct recv_args {
 	void* (*callback) (void*);
 	int socket;
+	void *upperLayerArgs;
 };
 
 inline int getProtocolNumber(void);
 inline void logger(char *message);
 int openSocket(int *fd, const char *localAddr, const char *localPort, const char *remoteAddr, const char *remotePort);
 int openSender(int *fd, const char *remoteAddr, const char *remotePort);
-void createCallback(void *(*callback)(void *), const int socket);
+p2pError createCallback(void *(*callback)(void *), const int socket, void *callbackArgs);
 void receiver(struct recv_args *args);
+p2pError openReceiver(int *fd, const char* localPort);
 
 /*
  * Initialize a P2P channel, i.e. create a p2p-receiver.
@@ -34,7 +37,7 @@ void receiver(struct recv_args *args);
  * localPort is our local port to open.
  */
 
-p2pError init_p2p(const char *localPort, const char *localAddr, struct p2pChannel *p2p, void *(*callback)(void*))
+p2pError init_p2p(const char *localPort, const char *localAddr, struct p2pChannel *p2p, void *(*callback)(void*), void *callbackArgs)
 {
 	int *fd, recv;
 	int res;
@@ -56,7 +59,12 @@ p2pError init_p2p(const char *localPort, const char *localAddr, struct p2pChanne
 	}
 	p2p->senders = fd;
 	p2p->sendersSize = initSize; 
-	createCallback(callback, p2p->receiver);
+	res = createCallback(callback, p2p->receiver, callbackArgs);
+	if(res != SUCCESS)
+	{
+		fprintf(stderr, "Cannot create pthread");
+		return res;
+	}
 	return SUCCESS;
 }
 
@@ -135,11 +143,11 @@ int openSender(int *fd, const char *remoteAddr, const char *remotePort)
 p2pError p2pSend(const struct p2pChannel *chan, const int index, const void* buf, const size_t length)
 {
 #ifdef LOGGER
-	fprintf(stderr, ANSI_YELLOW "[p2p]\tSending \"%s\"\n" ANSI_RESET, buf);
+	fprintf(stderr, ANSI_YELLOW "[p2p]\tSending \"%s\"\n" ANSI_RESET, (char*) buf);
 #endif
 	if (index >= chan->nb_senders)
 	{
-		fprintf(stderr, "Failure : trying to send to %i-th sender while %i exists", index, chan->nb_senders);
+		fprintf(stderr, "Failure : trying to send to %i-th sender while %zi exists", index, chan->nb_senders);
 		return ESEND;
 	}
 	if (send(chan->senders[index], buf, length, MSG_DONTWAIT) == -1)
@@ -157,7 +165,7 @@ p2pError p2pSend(const struct p2pChannel *chan, const int index, const void* buf
 	return SUCCESS;
 }
 
-void createCallback(void *(*callback)(void *), const int socket)
+p2pError createCallback(void *(*callback)(void *), const int socket, void *callbackArgs)
 {
 	pthread_t thread;
 	pthread_attr_t attr;
@@ -165,25 +173,45 @@ void createCallback(void *(*callback)(void *), const int socket)
 	if(pthread_attr_init(&attr) != 0)
 	{
 		fprintf(stderr, "pthread_attr_init() failed\n");
+		return 	EPTHREAD;
 	}
 	args = malloc(sizeof(struct recv_args));
 	args -> callback = callback;
 	args -> socket = socket;
-	pthread_create(&thread, &attr, (void*(*)(void*))receiver, args);
+	args -> upperLayerArgs = callbackArgs;
+	int res = pthread_create(&thread, &attr, (void*(*)(void*))receiver, args);
+	if (res != 0) 
+	{
+		fprintf(stderr, "pthread_create() failed : %i\n", res);
+	}
+	return res;
 }
 
 void receiver(struct recv_args *args)
 {
 	void* (*callback)(void*) = args->callback;
 	int socket = args->socket;
-	struct p2pMessage buf;
+	void *upperLayerArgs = args->upperLayerArgs;
+	struct p2pMessage *buf;
 	for(;;)
 	{
 #ifdef LOGGER
 		fprintf(stderr,  ANSI_YELLOW "[p2p]\tWaiting for a message\n" ANSI_RESET);
 #endif
-		recv(socket, &buf.message, sizeof(struct p2pMessage), 0);
-		callback(&buf);
+		pthread_t thread;
+		pthread_attr_t attr;
+		buf = malloc(sizeof(struct p2pMessage));
+		if(pthread_attr_init(&attr) != 0)
+		{
+			fprintf(stderr, "pthread_attr_init() failed\n");
+		}
+		recv(socket, &buf->message, sizeof(struct p2pMessage), 0);
+		buf->upperLayerArgs = upperLayerArgs;
+		int res = pthread_create(&thread, &attr, callback, buf);
+		if(res != 0)
+		{
+			fprintf(stderr, "pthread_create() failed : %i\n", res);
+		}
 	}
 }
 
@@ -196,9 +224,6 @@ p2pError openReceiver(int *fd, const char* localPort)
 	struct addrinfo hints;
 	struct addrinfo *result, *rp;
 	int sfd, s;
-	struct sockaddr_storage peer_addr;
-	socklen_t peer_addr_len;
-	ssize_t nread;
 
 	memset(&hints, 0, sizeof(struct addrinfo));
 	hints.ai_family = AF_UNSPEC;    /* Allow IPv4 or IPv6 */

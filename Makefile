@@ -1,20 +1,21 @@
 CC ?= gcc
 CCFLAGS = -DLOGGER
+ARGS=-Wall -Werror
 CCLIBS = -pthread
-OBJ = main.o p2p.o
+OBJ = main.o p2p.o coB.o
 PROG = s4
 
 all: $(PROG)
 
 $(PROG) : $(OBJ)
-	$(CC) $(CCFLAGS) -o $(PROG) $(OBJ) $(CCLIBS)
+	$(CC) $(ARGS) $(CCFLAGS) -o $(PROG) $(OBJ) $(CCLIBS)
 
 debug: 
-	$(CC) $(CCFLAGS) -g -c *.c
-	$(CC) $(CCFLAGS) -g -o $(PROG) $(OBJ) $(CCLIBS)
+	$(CC) $(ARGS) $(CCFLAGS) -g -c *.c
+	$(CC) $(ARGS) $(CCFLAGS) -g -o $(PROG) $(OBJ) $(CCLIBS)
 
 .c.o:
-	$(CC) $(CCFLAGS) -c $*.c
+	$(CC) $(ARGS) $(CCFLAGS) -c $*.c
 
 clean: 
 	-rm *.o

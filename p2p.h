@@ -1,15 +1,7 @@
 #include <stddef.h>
+#include "error.h"
 
-#define EFAIL -1
-#define SUCCESS 0
-#define ECREATE 1
-#define EINET 2
-#define EBIND 3
-#define EINIT 4
-#define ESEND 5
-#define EALLOC 6
-
-#define BUFF_SIZE 25
+#define P2P_BUFF_SIZE 50
 
 typedef int p2pError ;
 
@@ -21,13 +13,15 @@ struct p2pChannel {
 };
 
 struct p2pMessage {
-	char message[BUFF_SIZE];
+	char message[P2P_BUFF_SIZE];
+	void *upperLayerArgs;
 };
 
 struct p2pCallBack;
 
 p2pError init_p2p(const char *localPort, const char *localAddr, 
-		struct p2pChannel *p2p, void *(*callback)(void*));
+		struct p2pChannel *p2p, void *(*callback)(void*),
+		void *callbackArgs);
 
 p2pError init_p2p_sender(const char *remotePort, const char *remoteAddr,
 		struct p2pChannel *p2p);

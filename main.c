@@ -1,24 +1,27 @@
-#include "p2p.h"
+#include "coB.h"
+#include "color.h"
 #include <stdio.h>
 
 void printCallback(struct p2pMessage *buf)
 {
-	printf("Receiving callback : \n");
-	printf("%s\n", &(buf->message));
+	struct coMessage *coMesg = (struct coMessage*) buf->message;
+	void *args = buf->upperLayerArgs;
+	printf(ANSI_BLUE"Receiving message : \n");
+	printf("Sender :\t%i\tSSN :\t%i\nPredecessor :\t%i\tPSSN :\t%i\n", coMesg->sender, coMesg->ssn, coMesg->pred_sender, coMesg->pred_ssn);
+	printf("Args :\t%p\n", args);
+	printf("Data :\t%s\n"ANSI_RESET, coMesg->buffer);
 }
 
 int main(void)
 {
+	char *addrReceiver = "127.0.0.1";
+	char *portReceiver = "9999";
 	struct p2pChannel chan;
 	int res = init_p2p("9999", "127.0.0.1", &chan, 
-			(void* (*)(void*))&printCallback);
-	if(res == SUCCESS) {
-		res = init_p2p_sender("9999", "127.0.0.01", &chan);
-	}
-	if(res == SUCCESS) {
-		char* message = "Hello, world!";
-		res = p2pSend(&chan, 0, message, 14);
-	}
+			(void* (*)(void*))&printCallback, NULL);
+	struct coB broadcast;
+	coBInit(&addrReceiver, &portReceiver, 1, addrReceiver, "9998", NULL, &broadcast, 1);
+	coBSend("Hello, World !", &broadcast);
 	fprintf(stderr, "ZZZzzzz\n");
 	for(;;){}
 	return res;	
