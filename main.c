@@ -1,28 +1,31 @@
 #include "coB.h"
 #include "color.h"
 #include <stdio.h>
+#include <stdlib.h>
 
-void printCallback(struct p2pMessage *buf)
+void printCallback(char *mess)
 {
-	struct coMessage *coMesg = (struct coMessage*) buf->message;
-	void *args = buf->upperLayerArgs;
 	printf(ANSI_BLUE"Receiving message : \n");
-	printf("Sender :\t%i\tSSN :\t%i\nPredecessor :\t%i\tPSSN :\t%i\n", coMesg->sender, coMesg->ssn, coMesg->pred_sender, coMesg->pred_ssn);
-	printf("Args :\t%p\n", args);
-	printf("Data :\t%s\n"ANSI_RESET, coMesg->buffer);
+	printf("Data :\t%s\n"ANSI_RESET, mess);
 }
 
 int main(void)
 {
-	char *addrReceiver = "127.0.0.1";
-	char *portReceiver = "9999";
-	struct p2pChannel chan;
-	int res = init_p2p("9999", "127.0.0.1", &chan, 
-			(void* (*)(void*))&printCallback, NULL);
-	struct coB broadcast;
-	coBInit(&addrReceiver, &portReceiver, 1, addrReceiver, "9998", NULL, &broadcast, 1);
-	coBSend("Hello, World !", &broadcast);
-	fprintf(stderr, "ZZZzzzz\n");
+	char *b1Addr = "127.0.0.1";
+	char *b1Port = "9999";
+	char *b2Addr = "127.0.0.1";
+	char *b2Port = "9998";
+	struct coB b1, b2;
+	coBInit(&b2Addr, &b2Port, 1, b1Addr, b1Port, (void*(*)(void*)) &printCallback, &b1, 1);
+	coBInit(&b1Addr, &b1Port, 1, b2Addr, b2Port, (void*(*)(void*)) &printCallback, &b2, 2);
+	int i = 0;
+	for(; i < 20 ; i++)
+	{
+	char *mess = malloc(25 * sizeof(char));
+		sprintf(mess, "Hello, World ! (%i)", i);
+		coBSend(mess, &b1);
+	}
+	fprintf(stderr, "ZZZzzz\n");
 	for(;;){}
-	return res;	
+	return SUCCESS;
 }

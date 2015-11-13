@@ -14,6 +14,10 @@ debug:
 	$(CC) $(ARGS) $(CCFLAGS) -g -c *.c
 	$(CC) $(ARGS) $(CCFLAGS) -g -o $(PROG) $(OBJ) $(CCLIBS)
 
+profile:
+	$(CC) $(ARGS) $(CCFLAGS) -g -pg -c *.c
+	$(CC) $(ARGS) $(CCFLAGS) -g -pg -o $(PROG) $(OBJ) $(CCLIBS)
+
 .c.o:
 	$(CC) $(ARGS) $(CCFLAGS) -c $*.c
 

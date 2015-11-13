@@ -1,4 +1,5 @@
 #include "coB.h"
+#include "color.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -15,6 +16,7 @@ void p2pcallback(struct p2pMessage *args);
 int getTimestamp(struct coB *broadcast);
 int isReceived(int sender, int ssn, struct coB *broadcast);
 coBError coSender(struct coSenderArgs *args);
+void delivrer(struct coBDelivrerArgs *args);
 
 coBError coBInit(char **addrs, char **ports, size_t nbDest, char *localAddr, 
 		char *localPort, void* (*callback)(void*), 
@@ -35,7 +37,7 @@ coBError coBInit(char **addrs, char **ports, size_t nbDest, char *localAddr,
 		fprintf(stderr, "Error when initializing p2pChannel\n");
 		return res;
 	}
-	for (; i < nbDest ; i++, res = SUCCESS)
+for (; i < nbDest ; i++, res = SUCCESS)
 	{
 		res = init_p2p_sender(ports[i], addrs[i], &(broadcast->p2p));
 		if( res != SUCCESS ) 
@@ -44,12 +46,47 @@ coBError coBInit(char **addrs, char **ports, size_t nbDest, char *localAddr,
 		}
 	}
 	
+	struct coNode *root = NULL;
+	root = malloc(sizeof(struct coNode));
+	if(root == NULL)
+	{
+		fprintf(stderr, "Allocation error\n");
+		return EALLOC;
+	}
+	root->sender = -1;
+	root->ssn = -1;
+	root->predecessor = NULL;
+	root->successor = NULL;
+	
 	broadcast->timestamp = 0;
-	broadcast->delivered = NULL;
-	broadcast->causalTree = NULL;
+	broadcast->delivered = root;
+	broadcast->causalTree = root;
 	/*broadcast->waiting = NULL;*/
 	broadcast->nbWaitingThread = 0;
 	broadcast->id = id;
+
+	struct coBDelivrerArgs *delArgs = NULL;
+	delArgs = malloc(sizeof(struct coBDelivrerArgs));
+	if(delArgs == NULL)
+	{
+		fprintf(stderr, "Allocation error\n");
+		return EALLOC;
+	}
+	delArgs->callback = callback;
+	delArgs->broadcast = broadcast;
+
+	pthread_t thread;
+	pthread_attr_t attr;
+	if(pthread_attr_init(&attr) != 0)
+	{
+		fprintf(stderr, "pthread_attr_init() failed\n");
+	}
+	res = pthread_create(&thread, &attr, (void*(*)(void*))delivrer, delArgs);
+	if(res != 0)
+	{
+		fprintf(stderr, "pthread_create() failed : %i\n", res);
+	}
+	
 	return SUCCESS;
 }
 
@@ -63,8 +100,10 @@ coBError coBSend(char *message, struct coB *broadcast)
 	}
 	node->sender = broadcast->id;
 	node->ssn = getTimestamp(broadcast);
+	memcpy(&node->buffer, message, CO_BUFF_SIZE);
 	/* TODO : atomic modification of causal tree*/
 	node->predecessor = broadcast->causalTree;
+	node->predecessor->successor = node;
 	broadcast->causalTree = node;
 	/* End of atomic modification of causal tree */
 	/* Launch the sending (causal dependancy is set now) */
@@ -126,20 +165,26 @@ void p2pcallback(struct p2pMessage *args)
 {
 	struct coMessage *message = (struct coMessage*) args->message;
 	struct coB *broadcast = (struct coB*) args->upperLayerArgs;
+#ifdef LOGGER
+	fprintf(stderr, ANSI_GREEN "[coB]\tChecking for predecessor\n" ANSI_RESET);
+#endif
 	while(! isReceived(message->pred_sender, message->pred_ssn, broadcast))
 	{
-		/* Ask for new sending */
+		/* TODO : Ask for new sending */
 	}
 	struct coNode *node = malloc(sizeof(struct coNode));
 	if(node == NULL)
 	{
-		fprintf(stderr, "Allocation error");
+		fprintf(stderr, "Allocation error\n");
 		return;
 	}
 	node->sender = message->sender;
 	node->ssn = message->ssn;
+	memcpy(&node->buffer, &message->buffer, CO_BUFF_SIZE);
+	free(message);
 	/* TODO : atomic modification of causal tree */
 	node->predecessor = broadcast->causalTree;
+	node->predecessor->successor = node;
 	broadcast->causalTree = node;
 	/* End of atomic modification of causal tree */
 	return;
@@ -147,12 +192,47 @@ void p2pcallback(struct p2pMessage *args)
 
 int isReceivedRec(int sender, int ssn, struct coNode *tree)
 {
-	return (tree != NULL && tree->sender == sender && tree->ssn == ssn) || isReceivedRec(sender, ssn, tree->predecessor);
+	/* At the root of the tree and not found, i.e. not received yet*/
+	if(tree == NULL)
+	{
+		return 0;
+	}
+	return (tree->sender == sender && tree->ssn == ssn) || isReceivedRec(sender, ssn, tree->predecessor);
 }
 
 int isReceived(int sender, int ssn, struct coB *broadcast)
 {
 	return isReceivedRec(sender, ssn, broadcast->causalTree);
+}
+
+void delivrer(struct coBDelivrerArgs *args)
+{
+	void*(*callback)(void*) = args->callback;
+	struct coB *broadcast = args->broadcast;
+	char *message;
+	struct coNode *nextToDeliver;
+	for(;;)
+	{
+#ifdef LOGGER
+		fprintf(stderr,  ANSI_YELLOW "[coB]\tWaiting for a message to deliver\n" ANSI_RESET);
+#endif
+		while(broadcast->delivered == broadcast->causalTree);
+		nextToDeliver = broadcast->delivered->successor;
+		message = nextToDeliver->buffer;
+
+		pthread_t thread;
+		pthread_attr_t attr;
+		if(pthread_attr_init(&attr) != 0)
+		{
+			fprintf(stderr, "pthread_attr_init() failed\n");
+		}
+		int res = pthread_create(&thread, &attr, callback, message);
+		if(res != 0)
+		{
+			fprintf(stderr, "pthread_create() failed : %i\n", res);
+		}
+		broadcast->delivered = nextToDeliver;
+	}
 }
 
 int getTimestamp(struct coB *broadcast)

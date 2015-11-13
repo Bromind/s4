@@ -23,6 +23,12 @@ struct coNode {
 	int ssn;
 	struct coNode *predecessor;
 	struct coNode *successor;
+	char buffer[CO_BUFF_SIZE];
+};
+
+struct coBDelivrerArgs {
+	void*(*callback)(void*);
+	struct coB *broadcast;
 };
 
 struct coB {
