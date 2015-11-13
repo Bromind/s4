@@ -166,11 +166,13 @@ void p2pcallback(struct p2pMessage *args)
 	struct coMessage *message = (struct coMessage*) args->message;
 	struct coB *broadcast = (struct coB*) args->upperLayerArgs;
 #ifdef LOGGER
-	fprintf(stderr, ANSI_GREEN "[coB]\tChecking for predecessor\n" ANSI_RESET);
+	fprintf(stderr, ANSI_GREEN "[coB %i]\tChecking for predecessor\n" ANSI_RESET, broadcast->id);
 #endif
 	while(! isReceived(message->pred_sender, message->pred_ssn, broadcast))
 	{
 		/* TODO : Ask for new sending */
+		fprintf(stderr, ANSI_RED "[coB %i]\t predecessor not found, aborting\n" ANSI_RESET, broadcast->id);
+		return;
 	}
 	struct coNode *node = malloc(sizeof(struct coNode));
 	if(node == NULL)
@@ -214,7 +216,7 @@ void delivrer(struct coBDelivrerArgs *args)
 	for(;;)
 	{
 #ifdef LOGGER
-		fprintf(stderr,  ANSI_YELLOW "[coB]\tWaiting for a message to deliver\n" ANSI_RESET);
+		fprintf(stderr,  ANSI_YELLOW "[coB %i]\tWaiting for a message to deliver\n" ANSI_RESET, broadcast->id);
 #endif
 		while(broadcast->delivered == broadcast->causalTree);
 		nextToDeliver = broadcast->delivered->successor;
