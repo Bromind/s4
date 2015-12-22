@@ -130,6 +130,7 @@ int openSender(int *fd, const char *remoteAddr, const char *remotePort)
 		if (sfd == -1)
 			continue;
 
+#pragma GCC diagnostic ignored "-Wmaybe-uninitialized" /* uninialized checked above */
 		if (connect(sfd, rp->ai_addr, rp->ai_addrlen) == 0)
 			break;                  /* Success */
 
@@ -143,7 +144,9 @@ int openSender(int *fd, const char *remoteAddr, const char *remotePort)
 p2pError p2pSend(const struct p2pChannel *chan, const int index, const void* buf, const size_t length)
 {
 #ifdef LOGGER
-	fprintf(stderr, ANSI_YELLOW "[p2p]\tSending \"%s\"\n" ANSI_RESET, (char*) buf);
+	fprintf(stderr, ANSI_YELLOW "[p2p]\tSending \"");
+	fwrite(buf, length, 1, stderr);
+	fprintf(stderr, "\" to %i\n" ANSI_RESET, index);
 #endif
 	if (index >= chan->nb_senders)
 	{

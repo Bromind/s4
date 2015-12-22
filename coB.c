@@ -4,6 +4,9 @@
 #include <stdlib.h>
 #include <string.h>
 #include <pthread.h>
+#include <sched.h>
+#include <unistd.h>
+#include <errno.h>
 
 /*
  * message format : 
@@ -17,6 +20,10 @@ int getTimestamp(struct coB *broadcast);
 int isReceived(int sender, int ssn, struct coB *broadcast);
 coBError coSender(struct coSenderArgs *args);
 void delivrer(struct coBDelivrerArgs *args);
+void inBandMessage(struct coMessage* message, struct coB* broadcast);
+void outBandMessage(struct coMessage* message, struct coB* broadcast);
+
+void wait(unsigned int time);
 
 coBError coBInit(char **addrs, char **ports, size_t nbDest, char *localAddr, 
 		char *localPort, void* (*callback)(void*), 
@@ -37,7 +44,7 @@ coBError coBInit(char **addrs, char **ports, size_t nbDest, char *localAddr,
 		fprintf(stderr, "Error when initializing p2pChannel\n");
 		return res;
 	}
-for (; i < nbDest ; i++, res = SUCCESS)
+	for (; i < nbDest ; i++, res = SUCCESS)
 	{
 		res = init_p2p_sender(ports[i], addrs[i], &(broadcast->p2p));
 		if( res != SUCCESS ) 
@@ -61,9 +68,12 @@ for (; i < nbDest ; i++, res = SUCCESS)
 	broadcast->timestamp = 0;
 	broadcast->delivered = root;
 	broadcast->causalTree = root;
-	/*broadcast->waiting = NULL;*/
+	broadcast->first = root;
 	broadcast->nbWaitingThread = 0;
 	broadcast->id = id;
+	
+	initLock(&broadcast->lock);
+	broadcast->pause = 500;
 
 	struct coBDelivrerArgs *delArgs = NULL;
 	delArgs = malloc(sizeof(struct coBDelivrerArgs));
@@ -90,7 +100,7 @@ for (; i < nbDest ; i++, res = SUCCESS)
 	return SUCCESS;
 }
 
-coBError coBSend(char *message, struct coB *broadcast)
+coBError coBSend(char *message, struct coB *broadcast, char flags)
 {
 	struct coNode *node = NULL;
 	node = malloc(sizeof(struct coNode));
@@ -101,12 +111,17 @@ coBError coBSend(char *message, struct coB *broadcast)
 	node->sender = broadcast->id;
 	node->ssn = getTimestamp(broadcast);
 	memcpy(&node->buffer, message, CO_BUFF_SIZE);
-	/* TODO : atomic modification of causal tree*/
-	node->predecessor = broadcast->causalTree;
-	node->predecessor->successor = node;
-	broadcast->causalTree = node;
-	/* End of atomic modification of causal tree */
-	/* Launch the sending (causal dependancy is set now) */
+	/* TODO : atomic modification of causal tree if not out of band (see flags) */
+	if((flags & OUT_OF_BAND) == 0)
+	{
+		acquire(&broadcast->lock);
+		node->predecessor = broadcast->causalTree;
+		node->predecessor->successor = node;
+		broadcast->causalTree = node;
+		/* End of atomic modification of causal tree */
+		/* Launch the sending (causal dependancy is set now) */
+		release(&broadcast->lock);
+	}
 
 	pthread_t thread;
 	pthread_attr_t attr;
@@ -118,8 +133,8 @@ coBError coBSend(char *message, struct coB *broadcast)
 	}
 	args = malloc(sizeof(struct coSenderArgs));
 	args->node = node;
-	args->message = message;
 	args->broadcast = broadcast;
+	args->flags = flags;
 	int res = pthread_create(&thread, &attr, (void*(*)(void*))coSender, args);
 	if (res != 0) 
 	{
@@ -131,14 +146,16 @@ coBError coBSend(char *message, struct coB *broadcast)
 coBError coSender(struct coSenderArgs *args)
 {
 	struct coNode *node = args->node;
-	char *message = args->message;
+	char *message = node->buffer;
 	struct coB *broadcast = args->broadcast;
+	char flags = args->flags;
 	struct coMessage *mess = malloc(sizeof(struct coMessage));
 	if(mess == NULL)
 	{
 		fprintf(stderr, "Allocation error");
 		return EALLOC;
 	}
+	mess->flags = flags;
 	mess->sender = node->sender;
 	mess->ssn = node->ssn;
 	if(node->predecessor != NULL)
@@ -155,7 +172,9 @@ coBError coSender(struct coSenderArgs *args)
 	int i;
 	for(i = 0 ; i < p2p->nb_senders ; i++)
 	{
-		p2pSend(p2p, i, mess, sizeof(struct coMessage));
+		/* Send to all but ourself (already in our tree)*/
+		if(i != broadcast->id)
+			p2pSend(p2p, i, mess, sizeof(struct coMessage));
 	}
 	return SUCCESS;
 }
@@ -166,14 +185,88 @@ void p2pcallback(struct p2pMessage *args)
 	struct coMessage *message = (struct coMessage*) args->message;
 	struct coB *broadcast = (struct coB*) args->upperLayerArgs;
 #ifdef LOGGER
-	fprintf(stderr, ANSI_GREEN "[coB %i]\tChecking for predecessor\n" ANSI_RESET, broadcast->id);
+		fprintf(stderr, ANSI_GREEN "[coB %i]\t Receiving message (sender : %i, ssn : %i)\n" ANSI_RESET, broadcast->id, message->sender, message->ssn);
+#endif
+
+	if(((message->flags & OUT_OF_BAND) == 0) 
+		|| (message->flags == (OUT_OF_BAND | COPY))
+	){
+#ifdef LOGGER
+		fprintf(stderr, ANSI_GREEN "[coB %i]\t Receiving in band message (sender : %i, ssn : %i)\n" ANSI_RESET, broadcast->id, message->sender, message->ssn);
+#endif
+		inBandMessage(message, broadcast);
+	} else {
+#ifdef LOGGER
+		fprintf(stderr, ANSI_YELLOW "[coB %i]\t Receiving out of band message (sender : %i, ssn : %i)\n" ANSI_RESET, broadcast->id, message->sender, message->ssn);
+#endif
+		outBandMessage(message, broadcast);
+	}
+}
+
+void outBandMessage(struct coMessage* message, struct coB* broadcast)
+{
+	if((message->flags & REQUEST) != 0)
+	{
+		struct coNode* current = broadcast->causalTree;
+		while((current != NULL)
+			&& (current->ssn != message->pred_ssn)
+		){
+			current = current->predecessor;
+		}
+		if(current == NULL)
+		{
+			fprintf(stderr, ANSI_RED "[coB %i]\t asked to send a copy of ssn %i but it is not found in the tree" ANSI_RESET, broadcast->id, message->pred_ssn);
+			return;
+		}
+#ifdef LOGGER
+		fprintf(stderr, ANSI_BLUE "[coB %i]\t sending a copy of %i\n" ANSI_RESET, broadcast->id, message->pred_ssn);
+#endif
+		struct coSenderArgs args;
+		args.flags = OUT_OF_BAND | COPY;
+		args.node = current;
+		args.broadcast = broadcast;
+		coSender(&args);
+	}
+}
+
+void inBandMessage(struct coMessage* message, struct coB* broadcast)
+{
+	if(isReceived(message->sender, message->ssn, broadcast))
+	{
+#ifdef LOGGER
+	fprintf(stderr, ANSI_MAGENTA "[coB %i]\t Receiving duplicate ssn=%i from sender=%i\n" ANSI_RESET, broadcast->id, message->ssn, message->sender);
+#endif
+	return;
+	}
+#ifdef LOGGER
+	fprintf(stderr, ANSI_GREEN "[coB %i]\t Checking for predecessor (ssn : %i, sender : %i)\n" ANSI_RESET, broadcast->id, message->ssn, message->sender);
 #endif
 	while(! isReceived(message->pred_sender, message->pred_ssn, broadcast))
 	{
-		/* TODO : Ask for new sending */
-		fprintf(stderr, ANSI_RED "[coB %i]\t predecessor not found, aborting\n" ANSI_RESET, broadcast->id);
-		return;
+		fprintf(stderr, ANSI_RED "[coB %i]\t predecessor (ssn : %i, sender : %i) not found, sending request to %i\n" ANSI_RESET, broadcast->id, message->pred_ssn, message->pred_sender, message->pred_sender);
+		/*
+			Request message format : 
+			flags = OUT_OF_BAND | REQUEST
+			sender = id of requester
+			ssn = undefined
+			pred_sender = id of requested message sender
+			pred_ssn = id of requested message
+			buffer = undefined
+		*/
+		struct coMessage *request = NULL;
+		request = malloc(sizeof(struct coMessage));
+		request->flags = OUT_OF_BAND | REQUEST;
+		request->sender = broadcast->id;
+		request->pred_sender = message->pred_sender;
+		request->pred_ssn = message->pred_ssn;
+		p2pSend(&broadcast->p2p, request->pred_sender, request, sizeof(struct coMessage));
+
+		/* Given someone else chance to go, if any*/
+		wait(broadcast->pause);
 	}
+#ifdef LOGGER
+	fprintf(stderr, ANSI_GREEN "[coB %i]\t Predecessor found (ssn : %i, sender : %i)\n" ANSI_RESET, broadcast->id, message->ssn, message->sender);
+#endif
 	struct coNode *node = malloc(sizeof(struct coNode));
 	if(node == NULL)
 	{
@@ -184,12 +277,24 @@ void p2pcallback(struct p2pMessage *args)
 	node->ssn = message->ssn;
 	memcpy(&node->buffer, &message->buffer, CO_BUFF_SIZE);
 	free(message);
+#ifdef LOGGER
+	fprintf(stderr, ANSI_GREEN "[coB %i]\t Waiting for lock (ssn : %i, sender : %i)\n" ANSI_RESET, broadcast->id, message->ssn, message->sender);
+#endif
 	/* TODO : atomic modification of causal tree */
+	acquire(&broadcast->lock);
+#ifdef LOGGER
+	fprintf(stderr, ANSI_GREEN "[coB %i]\t Lock acquired (ssn : %i, sender : %i)\n" ANSI_RESET, broadcast->id, message->ssn, message->sender);
+#endif
 	node->predecessor = broadcast->causalTree;
 	node->predecessor->successor = node;
 	broadcast->causalTree = node;
 	/* End of atomic modification of causal tree */
+#ifdef LOGGER
+	fprintf(stderr, ANSI_GREEN "[coB %i]\t Lock released (ssn : %i, sender : %i)\n" ANSI_RESET, broadcast->id, message->ssn, message->sender);
+#endif
+	release(&broadcast->lock);
 	return;
+		
 }
 
 int isReceivedRec(int sender, int ssn, struct coNode *tree)
@@ -216,10 +321,13 @@ void delivrer(struct coBDelivrerArgs *args)
 	for(;;)
 	{
 #ifdef LOGGER
-		fprintf(stderr,  ANSI_YELLOW "[coB %i]\tWaiting for a message to deliver\n" ANSI_RESET, broadcast->id);
+		fprintf(stderr,  ANSI_YELLOW "[coB %i]\t Waiting for a message to deliver\n" ANSI_RESET, broadcast->id);
 #endif
 		while(broadcast->delivered == broadcast->causalTree);
 		nextToDeliver = broadcast->delivered->successor;
+#ifdef LOGGER
+		fprintf(stderr, ANSI_GREEN "[coB %i]\t Message (ssn : %i, sender : %i) being delivered\n" ANSI_RESET, broadcast->id, nextToDeliver->ssn, nextToDeliver->sender);
+#endif
 		message = nextToDeliver->buffer;
 
 		pthread_t thread;
@@ -243,4 +351,28 @@ int getTimestamp(struct coB *broadcast)
 	int tmp = broadcast->timestamp;
 	broadcast->timestamp++;
 	return tmp;
+}
+
+void printTree(struct coB *broadcast)
+{
+	struct coNode *current = broadcast->first;
+	char *color = ANSI_CYAN;
+	for(;current != NULL;current = current->successor)
+	{
+		fprintf(stdout, "%ssender : %i, ssn : %i, successor = %p, message : %s\n" ANSI_RESET, color, current->sender, current->ssn, current->successor, current->buffer);
+		if(current == broadcast->delivered)
+		{
+			color = ANSI_MAGENTA;
+		}
+	}	
+}
+
+void wait(unsigned int time)
+{
+	int err = usleep(time);// sched_yield();
+	if(err == -1)
+	{
+		fprintf(stderr, "wait failed : %s", strerror(errno));
+		return;
+	}
 }
