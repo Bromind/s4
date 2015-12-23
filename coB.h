@@ -8,6 +8,9 @@
 #define END_OF_COMMUNICATION (1 << 2) /* These are my last words. */
 #define COPY (1 << 3) /* this message is a copy of a previous one. */
 
+#define PAUSE_DELIVRER_DEFAULT 500
+#define MAX_WAIT 100000
+
 typedef int coBError;
 
 struct coCallbackArgs {
@@ -15,13 +18,23 @@ struct coCallbackArgs {
 	struct coB *broadcast;
 };
 
-struct coMessage {
+struct coMessageBuilder
+{
 	char flags;
 	int sender;
 	int ssn;
 	int pred_sender;
 	int pred_ssn;
 	char buffer[CO_BUFF_SIZE];
+};
+
+struct coMessage {
+	const char flags;
+	const int sender;
+	const int ssn;
+	const int pred_sender;
+	const int pred_ssn;
+	const char buffer[CO_BUFF_SIZE];
 };
 
 struct coNode {
@@ -40,19 +53,20 @@ struct coBDelivrerArgs {
 struct coB {
 	struct coNode *causalTree;
 	struct coNode *delivered;
-	struct coNode *first;
+	const struct coNode *first;
 	/*struct coNode **waiting;*/
 	int timestamp;
-	int id;
-	size_t nbWaitingThread;
+	const int id;
+	size_t nbReceivers;
 	struct p2pChannel p2p;
 	struct ticket_lock lock;
-	unsigned int pause;
+	unsigned int pause_request;
+	unsigned int pause_delivrer;
 };
 
 struct coSenderArgs {
 	char flags;
-	struct coNode *node;
+	struct coNode node;
 	struct coB *broadcast;
 };
 
@@ -63,3 +77,5 @@ coBError coBInit(char **addrs, char **ports, size_t nbDest, char *localAddr,
 coBError coBSend(char *message, struct coB *broadcast, char flags);
 
 void printTree(struct coB *broadcast);
+
+coBError closeBroadcaster(struct coB *broadcast);

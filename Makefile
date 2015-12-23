@@ -1,5 +1,5 @@
 CC ?= gcc
-CCFLAGS =-DLOGGER
+CCFLAGS =#-DLOGGER
 ARGS=-Wall -Werror -march=native
 CCLIBS = -pthread
 OBJ = main.o ticketLock.o p2p.o coB.o

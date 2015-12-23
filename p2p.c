@@ -59,6 +59,10 @@ p2pError init_p2p(const char *localPort, const char *localAddr, struct p2pChanne
 	}
 	p2p->senders = fd;
 	p2p->sendersSize = initSize; 
+	
+	p2p->nb_senders = 0;	
+	p2p->removed_senders = 0;
+
 	res = createCallback(callback, p2p->receiver, callbackArgs);
 	if(res != SUCCESS)
 	{
@@ -69,8 +73,20 @@ p2pError init_p2p(const char *localPort, const char *localAddr, struct p2pChanne
 }
 
 /*
+ * Delete the P2P channel. First ensure that all senders are deallocated.
+*/
+p2pError kill_p2p(struct p2pChannel *p2p)
+{
+	if(p2p->nb_senders > p2p->removed_senders)
+		return ESENDER_EXIST;
+	free(p2p->senders);
+	return SUCCESS;
+}
+
+/*
  * Add a sender to the set of senders of the given p2p channel.
  * Undefined behavior if p2p has not been successfully initialized by init_p2p.
+ * Not thread-safe
 */
 p2pError init_p2p_sender(const char *remotePort, const char *remoteAddr, 
 		struct p2pChannel *p2p)
@@ -102,6 +118,19 @@ p2pError init_p2p_sender(const char *remotePort, const char *remoteAddr,
 #ifdef LOGGER
 	fprintf(stderr, ANSI_YELLOW "[p2p]\tInitialized p2p sender to %s:%s\n" ANSI_RESET, remoteAddr, remotePort);
 #endif
+	return SUCCESS;
+}
+
+p2pError delete_p2p_sender(const size_t index, struct p2pChannel *p2p)
+{
+	int sender = p2p->senders[index];
+	if(close(sender) != 0)
+	{
+		fprintf(stderr, "Error closing socket : %s", strerror(errno));
+		return ECLOSE;
+	}
+	p2p->senders[index] = 0;
+	p2p->removed_senders++;
 	return SUCCESS;
 }
 
@@ -143,6 +172,8 @@ int openSender(int *fd, const char *remoteAddr, const char *remotePort)
 
 p2pError p2pSend(const struct p2pChannel *chan, const int index, const void* buf, const size_t length)
 {
+	if(chan->senders[index] == 0)
+		return ESENDER_DELETED;
 #ifdef LOGGER
 	fprintf(stderr, ANSI_YELLOW "[p2p]\tSending \"");
 	fwrite(buf, length, 1, stderr);
@@ -195,6 +226,7 @@ void receiver(struct recv_args *args)
 	void* (*callback)(void*) = args->callback;
 	int socket = args->socket;
 	void *upperLayerArgs = args->upperLayerArgs;
+	free(args);
 	struct p2pMessage *buf;
 	for(;;)
 	{

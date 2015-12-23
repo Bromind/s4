@@ -10,6 +10,7 @@ struct p2pChannel {
 	int *senders;
 	size_t nb_senders;
 	size_t sendersSize;
+	size_t removed_senders;
 };
 
 struct p2pMessage {
@@ -27,3 +28,7 @@ p2pError init_p2p_sender(const char *remotePort, const char *remoteAddr,
 		struct p2pChannel *p2p);
 
 p2pError p2pSend(const struct p2pChannel *chan, const int index, const void* buf, const size_t length);
+
+p2pError kill_p2p(struct p2pChannel *p2p);
+
+p2pError delete_p2p_sender(const size_t index, struct p2pChannel *p2p);
