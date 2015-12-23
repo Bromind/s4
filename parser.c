@@ -1,9 +1,13 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <errno.h>
+#include <string.h>
 #include "error.h"
 #include "parser.h"
 
+void parsePut(const char line[], struct statement *statement);
+void parseGet(const char line[], struct statement *statement);
+FILE * openFile(const char *name);
 struct file * parse(const char* name)
 {
 	FILE* fd = openFile(name);
@@ -79,21 +83,31 @@ void deleteFileTree(struct file* file)
 	}
 }
 
-void printFileTree(const struct file *file)
+void constMap(const struct file *file, void(*f)(const struct statement*))
 {
 	while(file !=NULL)
 	{
-		switch (file->command.type){ 
-			case PUT:
-				printf("put %s,%s\n", &file->command.key, &file->command.value);
-				break;
-			case GET:
-				printf("get %s\n", &file->command.key);
-				break;
-			case EOC:
-				printf("End of content\n");
-				break;
-		}
+		f(&file->command);
 		file = file->next;
 	}
+}
+
+void printCommand(const struct statement* cmd)
+{
+	switch (cmd->type){ 
+		case PUT:
+			printf("put %s,%s\n",(char*) &cmd->key, (char*)&cmd->value);
+			break;
+		case GET:
+			printf("get %s\n", (char*)&cmd->key);
+			break;
+		case EOC:
+			printf("End of content\n");
+			break;
+	}
+}
+
+void printFileTree(const struct file *file)
+{
+	constMap(file, printCommand);
 }

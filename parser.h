@@ -14,7 +14,7 @@ struct file {
 	struct file* next;
 };
 
-void parsePut(const char line[], struct statement *statement);
-void parseGet(const char line[], struct statement *statement);
-FILE * openFile(const char *name);
 
+struct file * parse(const char* name);
+void deleteFileTree(struct file* file);
+void constMap(const struct file *file, void(*f)(const struct statement*));

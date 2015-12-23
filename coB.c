@@ -381,17 +381,18 @@ void delivrer(struct coBDelivrerArgs *args)
 #endif
 		message = nextToDeliver->buffer;
 
-		pthread_t thread;
-		pthread_attr_t attr;
-		if(pthread_attr_init(&attr) != 0)
-		{
-			fprintf(stderr, "pthread_attr_init() failed\n");
-		}
-		int res = pthread_create(&thread, &attr, callback, message);
-		if(res != 0)
-		{
-			fprintf(stderr, "pthread_create() failed : %i\n", res);
-		}
+//		pthread_t thread;
+//		pthread_attr_t attr;
+//		if(pthread_attr_init(&attr) != 0)
+//		{
+//			fprintf(stderr, "pthread_attr_init() failed\n");
+//		}
+//		int res = pthread_create(&thread, &attr, callback, message);
+//		if(res != 0)
+//		{
+//			fprintf(stderr, "pthread_create() failed : %i\n", res);
+//		}
+		callback(message);
 		broadcast->delivered = nextToDeliver;
 	}
 }

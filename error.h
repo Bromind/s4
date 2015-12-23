@@ -11,3 +11,4 @@
 #define ECLOSE 8
 #define ESENDER_EXIST 9
 #define ESENDER_DELETED 10
+#define EARGS 11

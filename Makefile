@@ -2,7 +2,7 @@ CC ?= gcc
 CCFLAGS =#-DLOGGER
 ARGS=-Wall -Werror -march=native
 CCLIBS = -pthread
-OBJ = main.o ticketLock.o p2p.o coB.o
+OBJ = s4.o ticketLock.o p2p.o coB.o map.o parser.o
 PROG = s4
 
 all: $(PROG)
