@@ -3,7 +3,7 @@ CCFLAGS =#-DLOGGER
 ARGS=-Wall -Werror -march=native
 CCLIBS = -pthread
 OBJ = s4.o ticketLock.o p2p.o coB.o map.o parser.o
-PROG = s4
+PROG = s4.bin
 
 all: $(PROG)
 
@@ -26,4 +26,5 @@ profile:
 
 clean: 
 	-rm *.o
-	-rm s4
+	-rm $(PROG)
+	-rm *.output
