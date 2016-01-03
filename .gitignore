@@ -3,4 +3,5 @@
 *.log
 *.patch
 *.swp
-s4.*
+s4.o
+s4.bin
