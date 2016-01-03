@@ -7,6 +7,7 @@
 #include <string.h>
 #include "map.h"
 #include <errno.h>
+#include <signal.h>
 
 struct coB broadcaster;
 FILE* outputFile;
@@ -14,6 +15,8 @@ int localIndex;
 volatile int finished = 0;
 volatile int start = 0;
 struct map map;
+
+void starter(int signo);
 
 void writer(char* mess)
 {
@@ -118,11 +121,21 @@ int main(int argc, char** argv)
 	}
 
 	initMap(&map);
-
 	coBInit(addrs, ports, nbNode, addrs[localIndex], ports[localIndex], (void*(*)(void*)) &writer, &broadcaster, localIndex);
+
+	/* Signal catching. Use sa_handler. */
+	struct sigaction action, oldAction; 
+	memset(&action, '\0', sizeof(struct sigaction));
+	action.sa_handler = &starter;
 	
+	if(sigaction(SIGINT, &action, &oldAction) != 0)
+	{
+		fprintf(stderr, "sigaction() failed : %s\n", strerror(errno));
+	}
 
 	struct file* file = parse(inputFile);
+
+	for(;start != 1;); /* Wait for start flag */ 
 
 	constMap(file, broadcast);
 
@@ -131,4 +144,15 @@ int main(int argc, char** argv)
 	deleteFileTree(file);
 	
 	return SUCCESS;
+}
+
+void starter(int signo)
+{
+	switch(signo) 
+	{
+		case SIGINT:
+			fprintf(stderr, "En route vers l'infini et l'au-delà...\n");
+			start = 1;
+			break;
+	}
 }

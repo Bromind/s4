@@ -1,2 +1,6 @@
 *.o
+*.input
+*.log
+*.patch
+*.swp
 s4.*
