@@ -6,9 +6,10 @@
 #include <unistd.h>
 #include <string.h>
 #include "map.h"
+#include <errno.h>
 
 struct coB broadcaster;
-char fileName[10];
+FILE* outputFile;
 int localIndex;
 volatile int finished = 0;
 volatile int start = 0;
@@ -38,7 +39,7 @@ void writer(char* mess)
 				{
 					stored = "undefined";
 				}
-				printf("%s,%s\n",key,stored);
+				fprintf(outputFile,"%s,%s\n",key,stored);
 			}	
 			break;
 		case 'E' : 
@@ -49,6 +50,13 @@ void writer(char* mess)
 			break;
 	}
 }
+
+/*
+	message format : 
+	P\000KEY.......\000VALUE.....\000\000
+	G\000\IDX\IDX\IDX\IDX\000KEY.......\000\000\000\000\000\000\000\000
+	E\000\IDX\IDX\IDX\IDX\000...
+*/
 
 void broadcast(const struct statement* cmd)
 {
@@ -74,7 +82,6 @@ void broadcast(const struct statement* cmd)
 			*(int*)indexPos = localIndex;
 			coBSend(msg, &broadcaster, 0);
 			break;
-			break;
 	}
 }
 
@@ -99,7 +106,16 @@ int main(int argc, char** argv)
 	}
 	localIndex = atoi(argv[1+2*nbNode]);
 	char* inputFile = argv[2+2*nbNode];
+
+	char fileName[10];
 	sprintf(fileName, "%i.output", localIndex);
+	outputFile = fopen(fileName, "w");
+	if(outputFile == NULL)
+	{
+		fprintf(stderr, "Can't open file %s : %s\n", fileName, strerror(errno));
+		fprintf(stderr, "Will output to stdout instead\n");
+		outputFile = stdout;
+	}
 
 	initMap(&map);
 

@@ -39,7 +39,7 @@ char* get(struct map* map, const char* key)
 	{
 		return NULL;
 	}
-	return map->set[i]->key;
+	return map->set[i]->value;
 }
 
 void put(struct map* map, const char* key, const char* value)
