@@ -134,12 +134,12 @@ coBError coBSend(char *message, struct coB *broadcast, char flags)
 		return EALLOC;
 	}
 	node->sender = broadcast->id;
-	node->ssn = getTimestamp(broadcast);
 	if(message != NULL)
 		memcpy(&node->buffer, message, CO_BUFF_SIZE);
 	/* TODO : atomic modification of causal tree if not out of band (see flags) */
 	if((flags & OUT_OF_BAND) == 0)
 	{
+		node->ssn = getTimestamp(broadcast);
 		acquire(&broadcast->lock);
 		node->predecessor = broadcast->causalTree;
 		node->predecessor->successor = node;
@@ -241,7 +241,9 @@ void outBandMessage(struct coMessage* message, struct coB* broadcast)
 		}
 		if(current == NULL)
 		{
+#ifdef LOGGER
 			fprintf(stderr, ANSI_RED "[coB %i]\t asked to send a copy of ssn %i but it is not found in the tree" ANSI_RESET, broadcast->id, message->pred_ssn);
+#endif
 			return;
 		}
 #ifdef LOGGER
@@ -294,7 +296,13 @@ void inBandMessage(struct coMessage* message, struct coB* broadcast)
 		request->sender = broadcast->id;
 		request->pred_sender = message->pred_sender;
 		request->pred_ssn = message->pred_ssn;
-		p2pSend(&broadcast->p2p, request->pred_sender, (struct coMessage*)request, sizeof(struct coMessage));
+		int i;
+		for(i = 0 ; i < broadcast->p2p.nb_senders ; i++)
+		{
+			/* Send to all but ourself */
+			if(i != broadcast->id)
+				p2pSend(&broadcast->p2p, i, (struct coMessage*)request, sizeof(struct coMessage));
+		}
 
 		/* Given someone else chance to go, if any*/
 		wait(broadcast->pause_request);
