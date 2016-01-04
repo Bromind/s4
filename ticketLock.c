@@ -1,3 +1,4 @@
+#include <sched.h>
 #include "ticketLock.h"
 
 void acquire(struct ticket_lock* lock)
@@ -6,6 +7,7 @@ void acquire(struct ticket_lock* lock)
 	unsigned int current = lock->head;
 	while(current != myticket)
 {
+	sched_yield();
 	current = lock->head;
 	asm volatile ("nop");
 }

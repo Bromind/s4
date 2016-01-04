@@ -5,7 +5,7 @@
 #define THREAD_MANAGER
 
 #ifndef THREAD_LIMIT 
-#define THREAD_LIMIT 200
+#define THREAD_LIMIT 40
 #endif
 
 struct threadManager {
