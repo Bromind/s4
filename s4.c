@@ -8,6 +8,7 @@
 #include "map.h"
 #include <errno.h>
 #include <signal.h>
+#include <sys/time.h>
 
 struct coB broadcaster;
 FILE* outputFile;
@@ -125,6 +126,9 @@ int main(int argc, char** argv)
 	size_t fileSize = 0;
 	struct file* file = parse(inputFile, &fileSize);
 
+	struct timeval startTime, stopTime;
+	unsigned long usec;
+
 #ifndef DONT_WAIT_SIGNAL /* Wait signal option */
 	/* Signal catching. Use sa_handler. */
 	struct sigaction action, oldAction; 
@@ -144,16 +148,22 @@ int main(int argc, char** argv)
 	{
 		fprintf(stderr, "sigaction() failed : %s\n", strerror(errno));
 	}
+	gettimeofday(&startTime, NULL);
 #endif
 
 	constMap(file, broadcast);
 
 	for(;finished != 1;)
 		sched_yield();
+
+	gettimeofday(&stopTime, NULL);
+	usec = (stopTime.tv_sec - startTime.tv_sec) * 1e6;
+	usec += (stopTime.tv_usec - startTime.tv_usec);
+	printf(";Time for processing %zu commands\n%.3gseconds\n", fileSize, usec/(double)1e6);
+
 	closeBroadcaster(&broadcaster);
 	deleteFileTree(file);
 	
-	fprintf(stderr, "Too much work for today, I have finished my file, let's exit.\n");
 	
 	return SUCCESS;
 }
