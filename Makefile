@@ -2,7 +2,7 @@ CC ?= gcc
 CCFLAGS =#-DDONT_WAIT_SIGNAL#-DLOGGER
 ARGS=-Wall -Werror -march=native
 CCLIBS = -pthread
-OBJ = s4.o ticketLock.o p2p.o coB.o map.o parser.o threadManager.o linkedList.o
+OBJ = s4.o ticketLock.o p2p.o coB.o map.o parser.o threadManager.o
 PROG = s4
 
 all: $(PROG)

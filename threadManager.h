@@ -1,5 +1,4 @@
 #include <pthread.h>
-#include "linkedList.h"
 #include "ticketLock.h"
 
 #ifndef THREAD_MANAGER
