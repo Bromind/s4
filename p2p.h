@@ -1,5 +1,6 @@
 #include <stddef.h>
 #include "error.h"
+#include "threadManager.h"
 
 #define P2P_BUFF_SIZE 50
 
@@ -11,6 +12,7 @@ struct p2pChannel {
 	size_t nb_senders;
 	size_t sendersSize;
 	size_t removed_senders;
+	struct threadManager manager;
 };
 
 struct p2pMessage {

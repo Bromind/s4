@@ -1,6 +1,7 @@
 #include "p2p.h"
 #include "error.h"
 #include "ticketLock.h"
+#include "threadManager.h"
 
 #define CO_BUFF_SIZE 25
 #define OUT_OF_BAND (1 << 0) /* This is not an original copy */
@@ -62,6 +63,7 @@ struct coB {
 	struct ticket_lock lock;
 	unsigned int pause_request;
 	unsigned int pause_delivrer;
+	struct threadManager manager;
 };
 
 struct coSenderArgs {

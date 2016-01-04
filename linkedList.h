@@ -1,3 +1,5 @@
+#ifndef LINKED_LIST
+#define LINKED_LIST
 struct cell
 {
 	void* element;
@@ -38,3 +40,5 @@ void freeList(struct linkedList * list);
 
 /* return the index-th cell of the list */
 struct cell * getIndex(struct linkedList * list, int index);
+
+#endif

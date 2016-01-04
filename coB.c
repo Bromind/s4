@@ -70,6 +70,7 @@ coBError coBInit(char **addrs, char **ports, size_t nbDest, char *localAddr,
 	broadcast->causalTree = root;
 	broadcast->first = root;
 	broadcast->nbReceivers = nbDest;
+	initManager(&broadcast->manager);
 
 	/* Ugly, but we have no-choice to initialize id and to make it constant after */
 	int* id_modifiable = (int*)&broadcast->id;
@@ -95,10 +96,10 @@ coBError coBInit(char **addrs, char **ports, size_t nbDest, char *localAddr,
 	{
 		fprintf(stderr, "pthread_attr_init() failed\n");
 	}
-	res = pthread_create(&thread, &attr, (void*(*)(void*))delivrer, delArgs);
+	res = requestThread(&thread, &attr, (void*(*)(void*))delivrer, delArgs, &broadcast->manager);
 	if(res != 0)
 	{
-		fprintf(stderr, "pthread_create() failed : %i\n", res);
+		fprintf(stderr, "requestThread() failed : %s", strerror(res));
 	}
 	
 	return SUCCESS;
@@ -152,19 +153,20 @@ coBError coBSend(char *message, struct coB *broadcast, char flags)
 	pthread_t thread;
 	pthread_attr_t attr;
 	struct coSenderArgs *args;
-	if(pthread_attr_init(&attr) != 0)
+	int res = pthread_attr_init(&attr);
+	if( res != 0)
 	{
-		fprintf(stderr, "pthread_attr_init() failed\n");
+		fprintf(stderr, "pthread_attr_init() failed : %s", strerror(res));
 		return EPTHREAD;
 	}
 	args = malloc(sizeof(struct coSenderArgs));
 	memcpy(&args->node, node, sizeof(struct coNode));
 	args->broadcast = broadcast;
 	args->flags = flags;
-	int res = pthread_create(&thread, &attr, (void*(*)(void*))coSender, args);
+	res = requestThread(&thread, &attr, (void*(*)(void*))coSender, args, &broadcast->manager);
 	if (res != 0) 
 	{
-		fprintf(stderr, "pthread_create() failed : %i\n", res);
+		fprintf(stderr, "requestThread() failed");
 	}
 	return res;
 }

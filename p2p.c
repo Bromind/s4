@@ -21,13 +21,14 @@ struct recv_args {
 	void* (*callback) (void*);
 	int socket;
 	void *upperLayerArgs;
+	struct threadManager *manager;
 };
 
 inline int getProtocolNumber(void);
 inline void logger(char *message);
 int openSocket(int *fd, const char *localAddr, const char *localPort, const char *remoteAddr, const char *remotePort);
 int openSender(int *fd, const char *remoteAddr, const char *remotePort);
-p2pError createCallback(void *(*callback)(void *), const int socket, void *callbackArgs);
+p2pError createCallback(void *(*callback)(void *), const int socket, void *callbackArgs, struct p2pChannel *p2p);
 void receiver(struct recv_args *args);
 p2pError openReceiver(int *fd, const char* localPort);
 
@@ -43,6 +44,7 @@ p2pError init_p2p(const char *localPort, const char *localAddr, struct p2pChanne
 	int res;
 	int initSize = 1;
 	memset(p2p, 0, sizeof(struct p2pChannel));
+	initManager(&p2p->manager);
 	res = openReceiver(&recv, localPort);
 	if(res != SUCCESS)
 	{
@@ -63,7 +65,7 @@ p2pError init_p2p(const char *localPort, const char *localAddr, struct p2pChanne
 	p2p->nb_senders = 0;	
 	p2p->removed_senders = 0;
 
-	res = createCallback(callback, p2p->receiver, callbackArgs);
+	res = createCallback(callback, p2p->receiver, callbackArgs, p2p);
 	if(res != SUCCESS)
 	{
 		fprintf(stderr, "Cannot create pthread");
@@ -199,7 +201,7 @@ p2pError p2pSend(const struct p2pChannel *chan, const int index, const void* buf
 	return SUCCESS;
 }
 
-p2pError createCallback(void *(*callback)(void *), const int socket, void *callbackArgs)
+p2pError createCallback(void *(*callback)(void *), const int socket, void *callbackArgs, struct p2pChannel *p2p)
 {
 	pthread_t thread;
 	pthread_attr_t attr;
@@ -213,10 +215,11 @@ p2pError createCallback(void *(*callback)(void *), const int socket, void *callb
 	args -> callback = callback;
 	args -> socket = socket;
 	args -> upperLayerArgs = callbackArgs;
-	int res = pthread_create(&thread, &attr, (void*(*)(void*))receiver, args);
+	args -> manager = &p2p->manager;
+	int res = requestThread(&thread, &attr, (void*(*)(void*))receiver, args, &p2p->manager);
 	if (res != 0) 
 	{
-		fprintf(stderr, "pthread_create() failed : %i\n", res);
+		fprintf(stderr, "requestThread() failed\n");
 	}
 	return res;
 }
@@ -226,6 +229,7 @@ void receiver(struct recv_args *args)
 	void* (*callback)(void*) = args->callback;
 	int socket = args->socket;
 	void *upperLayerArgs = args->upperLayerArgs;
+	struct threadManager* manager = args->manager;
 	free(args);
 	struct p2pMessage *buf;
 	for(;;)
@@ -242,10 +246,10 @@ void receiver(struct recv_args *args)
 		}
 		recv(socket, &buf->message, sizeof(struct p2pMessage), 0);
 		buf->upperLayerArgs = upperLayerArgs;
-		int res = pthread_create(&thread, &attr, callback, buf);
+		int res = requestThread(&thread, &attr, callback, buf, manager);
 		if(res != 0)
 		{
-			fprintf(stderr, "pthread_create() failed : %i\n", res);
+			fprintf(stderr, "requestThread() failed : %s\n", strerror(res));
 		}
 	}
 }

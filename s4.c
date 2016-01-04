@@ -122,7 +122,9 @@ int main(int argc, char** argv)
 
 	initMap(&map);
 	coBInit(addrs, ports, nbNode, addrs[localIndex], ports[localIndex], (void*(*)(void*)) &writer, &broadcaster, localIndex);
+	struct file* file = parse(inputFile);
 
+#ifndef DONT_WAIT_SIGNAL /* Wait signal option */
 	/* Signal catching. Use sa_handler. */
 	struct sigaction action, oldAction; 
 	memset(&action, '\0', sizeof(struct sigaction));
@@ -133,9 +135,14 @@ int main(int argc, char** argv)
 		fprintf(stderr, "sigaction() failed : %s\n", strerror(errno));
 	}
 
-	struct file* file = parse(inputFile);
 
-	for(;start != 1;); /* Wait for start flag */ 
+	for(;start != 1;){sleep(1);} /* Wait for start flag */ 
+
+	if(sigaction(SIGINT, &oldAction, NULL) != 0)
+	{
+		fprintf(stderr, "sigaction() failed : %s\n", strerror(errno));
+	}
+#endif
 
 	constMap(file, broadcast);
 
@@ -143,6 +150,7 @@ int main(int argc, char** argv)
 	closeBroadcaster(&broadcaster);
 	deleteFileTree(file);
 	
+	while(1);
 	return SUCCESS;
 }
 
