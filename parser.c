@@ -8,8 +8,9 @@
 void parsePut(const char line[], struct statement *statement);
 void parseGet(const char line[], struct statement *statement);
 FILE * openFile(const char *name);
-struct file * parse(const char* name)
+struct file * parse(const char* name, size_t *fileSize)
 {
+	size_t size = 0;
 	FILE* fd = openFile(name);
 	struct file* file = malloc(sizeof(struct file));
 	struct file* first = file;
@@ -17,6 +18,7 @@ struct file * parse(const char* name)
 	char line[27];
 	while(fgets(line, 27, fd) != NULL)
 	{
+		size++;
 		file->next = malloc(sizeof(struct file));
 		if(line[0] == 'p') 
 		{
@@ -29,6 +31,7 @@ struct file * parse(const char* name)
 		file = file->next;
 	}
 	file->command.type = EOC;
+	*fileSize = size;
 	return first;
 }
 

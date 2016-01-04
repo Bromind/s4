@@ -122,7 +122,8 @@ int main(int argc, char** argv)
 
 	initMap(&map);
 	coBInit(addrs, ports, nbNode, addrs[localIndex], ports[localIndex], (void*(*)(void*)) &writer, &broadcaster, localIndex);
-	struct file* file = parse(inputFile);
+	size_t fileSize = 0;
+	struct file* file = parse(inputFile, &fileSize);
 
 #ifndef DONT_WAIT_SIGNAL /* Wait signal option */
 	/* Signal catching. Use sa_handler. */
@@ -136,7 +137,8 @@ int main(int argc, char** argv)
 	}
 
 
-	for(;start != 1;){sleep(1);} /* Wait for start flag */ 
+	for(;start != 1;)
+		sleep(1); /* Wait for start flag */ 
 
 	if(sigaction(SIGINT, &oldAction, NULL) != 0)
 	{
@@ -146,7 +148,8 @@ int main(int argc, char** argv)
 
 	constMap(file, broadcast);
 
-	for(;finished != 1;);
+	for(;finished != 1;)
+		sched_yield();
 	closeBroadcaster(&broadcaster);
 	deleteFileTree(file);
 	
@@ -158,7 +161,7 @@ void starter(int signo)
 	switch(signo) 
 	{
 		case SIGINT:
-			fprintf(stderr, "En route vers l'infini et l'au-delà...\n");
+			fprintf(stderr, "\nEn route vers l'infini et l'au-delà...\n");
 			start = 1;
 			break;
 	}

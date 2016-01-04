@@ -15,6 +15,6 @@ struct file {
 };
 
 
-struct file * parse(const char* name);
+struct file * parse(const char* name, size_t *fileSize);
 void deleteFileTree(struct file* file);
 void constMap(const struct file *file, void(*f)(const struct statement*));
