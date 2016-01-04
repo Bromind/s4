@@ -153,6 +153,8 @@ int main(int argc, char** argv)
 	closeBroadcaster(&broadcaster);
 	deleteFileTree(file);
 	
+	fprintf(stderr, "Too much work for today, I have finished my file, let's exit.\n");
+	
 	return SUCCESS;
 }
 

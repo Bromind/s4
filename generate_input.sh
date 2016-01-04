@@ -8,7 +8,7 @@ generateType(){
 }
 
 generateKey(){
-	KEY=$(cat /dev/urandom | tr -dc 'A-Z' | head -c 2)
+	KEY=$(cat /dev/urandom | tr -dc 'A-Z' | head -c 1)
 }
 
 generateValue(){

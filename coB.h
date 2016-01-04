@@ -55,7 +55,6 @@ struct coB {
 	struct coNode *causalTree;
 	struct coNode *delivered;
 	const struct coNode *first;
-	/*struct coNode **waiting;*/
 	int timestamp;
 	const int id;
 	size_t nbReceivers;
@@ -64,6 +63,7 @@ struct coB {
 	unsigned int pause_request;
 	unsigned int pause_delivrer;
 	struct threadManager manager;
+	char *maskedDest;
 };
 
 struct coSenderArgs {
@@ -81,3 +81,5 @@ coBError coBSend(char *message, struct coB *broadcast, char flags);
 void printTree(struct coB *broadcast);
 
 coBError closeBroadcaster(struct coB *broadcast);
+
+void maskDest(struct coB *broadcast, size_t index);

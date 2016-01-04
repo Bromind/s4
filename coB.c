@@ -8,6 +8,8 @@
 #include <unistd.h>
 #include <errno.h>
 
+#define MAX_ITER_BEFORE_DROP 200
+
 /*
  * message format : 
  * [id message = sender:ssn]
@@ -37,6 +39,10 @@ coBError coBInit(char **addrs, char **ports, size_t nbDest, char *localAddr,
 
 	size_t i = 0;
 	p2pError res = 0;
+
+	broadcast->maskedDest = malloc(nbDest*sizeof(char));
+	memset(broadcast->maskedDest, 0, sizeof(char)*nbDest);
+
 	res = init_p2p(localPort, localAddr, &(broadcast->p2p), 
 			(void*(*)(void*))&p2pcallback, broadcast);
 	if(res != SUCCESS)
@@ -123,6 +129,8 @@ coBError closeBroadcaster(struct coB *broadcast)
 		free(tree->successor);
 	}
 	free(tree);
+
+	free(broadcast->maskedDest);
 	return SUCCESS;
 }
 
@@ -201,8 +209,15 @@ coBError coSender(struct coSenderArgs *args)
 	for(i = 0 ; i < p2p->nb_senders ; i++)
 	{
 		/* Send to all but ourself (already in our tree)*/
-		if(i != broadcast->id)
-			p2pSend(p2p, i, (struct coMessage*)mess, sizeof(struct coMessage));
+		if(i != broadcast->id && broadcast->maskedDest[i]==0)
+		{
+			int p2pError = p2pSend(p2p, i, (struct coMessage*)mess, sizeof(struct coMessage));
+			if(p2pError != SUCCESS)
+			{
+				fprintf(stderr, ANSI_GREEN "[coB %i]\t Transmission failure, masking destination %i\n" ANSI_RESET, broadcast->id, i);
+				maskDest(broadcast, i);
+			}
+		}
 	}
 	return SUCCESS;
 }
@@ -215,6 +230,9 @@ void p2pcallback(struct p2pMessage *args)
 #ifdef LOGGER
 		fprintf(stderr, ANSI_GREEN "[coB %i]\t Receiving message (sender : %i, ssn : %i)\n" ANSI_RESET, broadcast->id, message->sender, message->ssn);
 #endif
+	
+	/* Unmask the sender */
+	broadcast->maskedDest[message->sender] = 0;
 
 	if(((message->flags & OUT_OF_BAND) == 0) 
 		|| (message->flags == (OUT_OF_BAND | COPY))
@@ -261,6 +279,7 @@ void outBandMessage(struct coMessage* message, struct coB* broadcast)
 
 void inBandMessage(struct coMessage* message, struct coB* broadcast)
 {
+	char iter = 0;
 	/* Non-safe duplication elimination, at first. Not safe but fast (no lock)*/
 	if(isReceived(message->sender, message->ssn, broadcast))
 	{
@@ -274,6 +293,15 @@ void inBandMessage(struct coMessage* message, struct coB* broadcast)
 #endif
 	while(! isReceived(message->pred_sender, message->pred_ssn, broadcast))
 	{
+		if(iter == MAX_ITER_BEFORE_DROP)
+		{
+#ifdef LOGGER
+	fprintf(stderr, ANSI_MAGENTA "[coB %i]\t To much iter for message (ssn : %i, sender : %i), dropping\n" ANSI_RESET, broadcast->id, message->ssn, message->sender);
+#endif
+			free(message);
+		} else {
+			iter++;
+		}
 		/* Non-safe duplication elimination, at second time, at each round. Not safe but fast (no lock)*/
 		if(isReceived(message->sender, message->ssn, broadcast))
 		{
@@ -282,7 +310,7 @@ void inBandMessage(struct coMessage* message, struct coB* broadcast)
 #endif
 			return;
 		}
-		fprintf(stderr, ANSI_RED "[coB %i]\t predecessor (ssn : %i, sender : %i) not found, sending request to %i (pause = %i)\n" ANSI_RESET, broadcast->id, message->pred_ssn, message->pred_sender, message->pred_sender, broadcast->pause_request);
+		fprintf(stderr, ANSI_RED "[coB %i]\t predecessor (ssn : %i, sender : %i) not found, sending request (pause = %i)\n" ANSI_RESET, broadcast->id, message->pred_ssn, message->pred_sender, broadcast->pause_request);
 		/*
 			Request message format : 
 			flags = OUT_OF_BAND | REQUEST
@@ -302,8 +330,15 @@ void inBandMessage(struct coMessage* message, struct coB* broadcast)
 		for(i = 0 ; i < broadcast->p2p.nb_senders ; i++)
 		{
 			/* Send to all but ourself */
-			if(i != broadcast->id)
-				p2pSend(&broadcast->p2p, i, (struct coMessage*)request, sizeof(struct coMessage));
+			if(i != broadcast->id && broadcast->maskedDest[i]==0)
+			{
+				p2pError res = p2pSend(&broadcast->p2p, i, (struct coMessage*)request, sizeof(struct coMessage));
+				if(res != SUCCESS)
+				{
+					fprintf(stderr, ANSI_GREEN "[coB %i]\t Transmission failure, masking destination %i\n" ANSI_RESET, broadcast->id, i);
+					maskDest(broadcast, i);
+				}
+			}
 		}
 
 		/* Given someone else chance to go, if any*/
@@ -328,7 +363,7 @@ void inBandMessage(struct coMessage* message, struct coB* broadcast)
 #ifdef LOGGER
 	fprintf(stderr, ANSI_GREEN "[coB %i]\t Waiting for lock (ssn : %i, sender : %i)\n" ANSI_RESET, broadcast->id, message->ssn, message->sender);
 #endif
-	/* TODO : atomic modification of causal tree */
+	/* atomic modification of causal tree */
 	acquire(&broadcast->lock);
 #ifdef LOGGER
 	fprintf(stderr, ANSI_GREEN "[coB %i]\t Lock acquired (ssn : %i, sender : %i)\n" ANSI_RESET, broadcast->id, message->ssn, message->sender);
@@ -351,7 +386,6 @@ void inBandMessage(struct coMessage* message, struct coB* broadcast)
 	release(&broadcast->lock);
 	free(message);
 	return;
-		
 }
 
 int isReceivedRec(int sender, int ssn, struct coNode *tree)
@@ -427,6 +461,11 @@ void printTree(struct coB *broadcast)
 			color = ANSI_MAGENTA;
 		}
 	}	
+}
+
+void maskDest(struct coB *broadcast, size_t index)
+{
+	broadcast->maskedDest[index] = 1;
 }
 
 void wait(unsigned int time)
