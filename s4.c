@@ -150,7 +150,6 @@ int main(int argc, char** argv)
 	closeBroadcaster(&broadcaster);
 	deleteFileTree(file);
 	
-	while(1);
 	return SUCCESS;
 }
 
